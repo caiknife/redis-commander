@@ -1,14 +1,13 @@
 'use strict';
-var foldingCharacter = ":";
 
 var CmdParser = require('cmdparser');
 function loadTree () {
-  $.get('/apiv1/connection', function (isConnected) {
+  $.get('apiv2/connection', function (isConnected) {
     if (isConnected) {
       $('#keyTree').bind("loaded.jstree", function () {
         var tree = getKeyTree();
         if (tree) {
-          var root = tree._get_children(-1)[0];
+          var root = tree.get_container().children("ul:eq(0)").children("li");
           tree.open_node(root, null, true);
         }
       });
@@ -16,111 +15,111 @@ function loadTree () {
         var json_dataData = [];
 
         data.forEach(function (instance, index) {
-          var host = instance.host;
-          var port = instance.port;
-          var db = instance.db;
-          json_dataData.push({
-            data: host + ":" + port + ":" + db,
-            state: "closed",
-            attr: {
-              id: host + ":" + port + ":" + db,
-              rel: "root"
-            }
-          });
+          // build root objects for jsontree
+          var treeObj = {
+            id: instance.host + ":" + instance.port + ":" + instance.db,
+            text: instance.label + " (" + instance.host + ":" + instance.port + ":" + instance.db + ")",
+            state: { opened: false },
+            icon: getIconForType('root'),
+            children: true,
+            rel: "root"
+          };
+          json_dataData.push(treeObj);
+
           if (index === data.length - 1) {
             return onJSONDataComplete();
           }
         });
+        function getJsonTreeData(node, cb) {
+          if (node.id === '#') return cb(json_dataData);
+
+          var dataUrl;
+          if (node.parent === '#') {
+              dataUrl = 'apiv2/keystree/' + encodeURIComponent(node.id) + '/';
+          }
+          else {
+              var root = getRootConnection(node);
+              var path = getFullKeyPath(node);
+              dataUrl = 'apiv2/keystree/' + encodeURIComponent(root) + '/' + encodeURIComponent(path) + '?absolute=false';
+          }
+          $.get({
+              url: dataUrl,
+              dataType: 'json'
+          }).done(function(nodeData) {
+            if (Array.isArray(nodeData)) {
+              nodeData.forEach(function(elem) {
+                 if (elem.rel) elem.icon = getIconForType(elem.rel);
+              });
+            }
+            cb(nodeData)
+          }).fail(function(error) {
+            console.log('Error fetching data for node ' + node.id + ': ' + JSON.stringify(error));
+            cb('Error fetching data');
+          });
+        }
+
+        function getIconForType(type) {
+          switch (type) {
+              case 'root': return 'images/treeRoot.png';
+              case 'string': return 'images/treeString.png';
+              case 'hash': return 'images/treeHash.png';
+              case 'set': return 'images/treeSet.png';
+              case 'list': return 'images/treeList.png';
+              case 'zset': return 'images/treeZSet.png';
+              default: return null;
+          }
+        }
+
         function onJSONDataComplete () {
           $('#keyTree').jstree({
-            json_data: {
-              data: json_dataData,
-              ajax: {
-                url: function (node) {
-                  if (node !== -1) {
-                    var path = getFullKeyPath(node);
-                    var root = getRootConnection(node);
-                    return '/apiv1/keystree/' + encodeURIComponent(root) + '/' + encodeURIComponent(path) + '?absolute=false';
+              core: {
+                  data: getJsonTreeData,
+                  multiple : false,
+                  check_callback : true,
+                  //themes: {
+                  //    responsive: true
+                  //}
+              },
+              contextmenu: {
+                  items: function (node) {
+                      var menu = {
+                          "addKey": {
+                              icon: './images/icon-plus.png',
+                              label: "Add Key",
+                              action: addKey
+                          },
+                          "refresh": {
+                              icon: './images/icon-refresh.png',
+                              label: "Refresh",
+                              action: function (obj) {
+                                  jQuery.jstree.reference("#keyTree").refresh(obj);
+                              }
+                          },
+                          "remKey": {
+                              icon: './images/icon-trash.png',
+                              label: 'Remove Key',
+                              action: deleteKey
+                          },
+                          "remConnection": {
+                              icon: './images/icon-trash.png',
+                              label: 'Disconnect',
+                              action: removeServer
+                          }
+                      };
+                      var rel = node.original.rel;
+                      if (typeof rel !== 'undefined' && rel !== 'root') {
+                          delete menu['addKey'];
+                      }
+                      if (rel !== 'root') {
+                          delete menu['remConnection'];
+                      }
+                      if (rel === 'root') {
+                          delete menu['remKey'];
+                      }
+                      return menu;
                   }
-                  var root = getRootConnection(node);
-                  return '/apiv1/keystree/' + encodeURIComponent(root);
-                }
-              }
-            },
-            types: {
-              types: {
-                "root": {
-                  icon: {
-                    image: '/images/treeRoot.png'
-                  }
-                },
-                "string": {
-                  icon: {
-                    image: '/images/treeString.png'
-                  }
-                },
-                "hash": {
-                  icon: {
-                    image: '/images/treeHash.png'
-                  }
-                },
-                "set": {
-                  icon: {
-                    image: '/images/treeSet.png'
-                  }
-                },
-                "list": {
-                  icon: {
-                    image: '/images/treeList.png'
-                  }
-                },
-                "zset": {
-                  icon: {
-                    image: '/images/treeZSet.png'
-                  }
-                }
-              }
-            },
-            contextmenu: {
-              items: function (node) {
-                var menu = {
-                  "addKey": {
-                    icon: 'icon-plus',
-                    label: "Add Key",
-                    action: addKey
-                  },
-                  "refresh": {
-                    icon: 'icon-refresh',
-                    label: "Refresh",
-                    action: function (obj) {
-                      jQuery.jstree._reference("#keyTree").refresh(obj);
-                    }
-                  },
-                  "remKey": {
-                    icon: 'icon-trash',
-                    label: 'Remove Key',
-                    action: deleteKey
-                  },
-                  "remConnection": {
-                    icon: 'icon-trash',
-                    label: 'Disconnect',
-                    action: removeServer
-                  }
-                };
-                var rel = node.attr('rel');
-                if (rel != undefined && rel != 'root') {
-                  delete menu['addKey'];
-                }
-                if (rel != 'root') {
-                  delete menu['remConnection'];
-                }
-                if (rel == 'root') {
-                  delete menu['remKey'];
-                }
-                return menu;
-              }
-            },
-            plugins: [ "themes", "json_data", "types", "ui", "contextmenu" ]
+              },
+              plugins: [ "themes", "contextmenu" ]
           })
             .bind("select_node.jstree", treeNodeSelected)
             .delegate("a", "click", function (event, data) {
@@ -134,47 +133,59 @@ function loadTree () {
 
 function treeNodeSelected (event, data) {
   $('#body').html('Loading...');
-
-  var pathParts = getKeyTree().get_path(data.rslt.obj, true);
-  var path = pathParts.slice(1).join(foldingCharacter);
-  var connectionId = pathParts.slice(0, 1)[0];
-  if (pathParts.length === 1) {
-    var hostAndPort = pathParts[0].split(':');
-    $.get('/apiv1/server/info', function (data, status) {
-      if (status != 'success') {
+  var connectionId;
+  if (data.node.parent === '#') {
+    connectionId = data.node.id;
+    var hostAndPort = connectionId.split(':');
+    $.get('apiv2/server/info', function (data, status) {
+      if (status !== 'success') {
         return alert("Could not load server info");
       }
       data = JSON.parse(data);
       data.forEach(function (instance) {
-        if (instance.host == hostAndPort[0] && instance.port == hostAndPort[1]) {
+        if (instance.host == hostAndPort[0] && instance.port == hostAndPort[1] && instance.db == hostAndPort[2]) {
           instance.connectionId = connectionId;
-          var html = new EJS({ url: '/templates/serverInfo.ejs' }).render(instance);
+          var html = "";
+          if (!instance.disabled) {
+            html = new EJS({ url: 'templates/serverInfo.ejs' }).render(instance);
+          }
+          else {
+              html = '<div>ERROR: ' + (instance.error ? instance.error : 'Server not available - cannot query status informations.') + '</div>'
+          }
           $('#body').html(html);
           return setupAddKeyButton();
         }
       });
     });
   } else {
+    connectionId = getRootConnection(data.node);
+    var path = getFullKeyPath(data.node);
     return loadKey(connectionId, path);
   }
 }
 
 function getFullKeyPath (node) {
-  return $.jstree._focused().get_path(node, true).slice(1).join(foldingCharacter);
+  if (node.parent === '#') {
+      return '';
+  }
+  return node.id.substr(getRootConnection(node).length + 1);
 }
 
 function getRootConnection (node) {
-  return $.jstree._focused().get_path(node, true).slice(0, 1);
+  if (node.parent === '#') {
+      return node.id;
+  }
+  return node.parents[node.parents.length-2];
 }
 
 function loadKey (connectionId, key, index) {
   if (index) {
-    $.get('/apiv1/key/' + encodeURIComponent(connectionId) + "/" + encodeURIComponent(key) + "/" + index, processData);
+    $.get('apiv2/key/' + encodeURIComponent(connectionId) + "/" + encodeURIComponent(key) + "?index=" + index, processData);
   } else {
-    $.get('/apiv1/key/' + encodeURIComponent(connectionId) + "/" + encodeURIComponent(key), processData);
+    $.get('apiv2/key/' + encodeURIComponent(connectionId) + "/" + encodeURIComponent(key), processData);
   }
   function processData (data, status) {
-    if (status != 'success') {
+    if (status !== 'success') {
       return alert("Could not load key data");
     }
 
@@ -208,12 +219,14 @@ function loadKey (connectionId, key, index) {
     resizeApp();
   }
 }
+
 function selectTreeNodeBranch (data) {
-  var html = new EJS({ url: '/templates/editBranch.ejs' }).render(data);
+  var html = new EJS({ url: 'templates/editBranch.ejs' }).render(data);
   $('#body').html(html);
 }
+
 function setupEditListButton () {
-  $('#editListRowForm').ajaxForm({
+  $('#editListValueForm').ajaxForm({
     beforeSubmit: function () {
       console.log('saving');
       $('#editListValueButton').button('loading');
@@ -225,7 +238,6 @@ function setupEditListButton () {
     },
     success: function () {
       console.log('saved', arguments);
-      $('#editListValueButton').button('reset');
       saveComplete();
     }
   });
@@ -234,13 +246,41 @@ function setupEditListButton () {
     setTimeout(function () {
       refreshTree();
       getKeyTree().select_node(0);
-      $('#editListRowModal').modal('hide');
+      $('#editListValueButton').button('reset');
+      $('#editListValueModal').modal('hide');
+    }, 500);
+  }
+}
+
+function setupEditSetButton () {
+  $('#editSetMemberForm').ajaxForm({
+    beforeSubmit: function () {
+      console.log('saving');
+      $('#editSetMemberButton').button('loading');
+    },
+    error: function (err) {
+      console.log('save error', arguments);
+      alert("Could not save '" + err.statusText + "'");
+      saveComplete();
+    },
+    success: function () {
+      console.log('saved', arguments);
+      saveComplete();
+    }
+  });
+
+  function saveComplete () {
+    setTimeout(function () {
+      $('#editSetMemberButton').button('reset');
+      $('#editSetMemberModal').modal('hide');
+      refreshTree();
+      getKeyTree().select_node(0);
     }, 500);
   }
 }
 
 function setupEditZSetButton () {
-  $('#editZSetRowForm').ajaxForm({
+  $('#editZSetMemberForm').ajaxForm({
     beforeSubmit: function () {
       console.log('saving');
       $('#editZSetValueButton').button('loading');
@@ -252,7 +292,6 @@ function setupEditZSetButton () {
     },
     success: function () {
       console.log('saved', arguments);
-      $('#editZSetValueButton').button('reset');
       saveComplete();
     }
   });
@@ -261,29 +300,43 @@ function setupEditZSetButton () {
     setTimeout(function () {
       refreshTree();
       getKeyTree().select_node(0);
-      $('#editZSetRowModal').modal('hide');
+      $('#editZSetValueButton').button('reset');
+      $('#editZSetMemberModal').modal('hide');
     }, 500);
   }
 }
 
 function setupAddKeyButton (connectionId) {
+  $('#newStringValue').val('');
+  $('#newFieldName').val('');
+  $('#keyScore').val('');
   $('#keyValue').keyup(function () {
-    var action = "/apiv1/key/" + encodeURIComponent(connectionId) + "/" + encodeURIComponent($(this).val());
+    var action = "apiv2/key/" + encodeURIComponent(connectionId) + "/" + encodeURIComponent($(this).val());
     $('#addKeyForm').attr("action", action);
   });
   $('#keyType').change(function () {
     var score = $('#scoreWrap');
-    if ($(this).val() == 'zset') {
+    if ($(this).val() === 'zset') {
       score.show();
     } else {
       score.hide();
     }
+    var field = $('#fieldWrap');
+    if ($(this).val() === 'hash') {
+      field.show();
+    } else {
+      field.hide();
+    }
   });
+  $('#addKeyIsJson').on('change', function(element) {
+    if (element.target.checked) addInputValidator('newStringValue', 'json');
+    else removeInputValidator('newStringValue');
+  });
+
   $('#addKeyForm').ajaxForm({
     beforeSubmit: function () {
       console.log('saving');
-      $('#saveKeyButton').attr("disabled", "disabled");
-      $('#saveKeyButton').html("<i class='icon-refresh'></i> Saving");
+      $('#saveKeyButton').attr("disabled", "disabled").html("<i class='icon-refresh'></i> Saving");
     },
     error: function (err) {
       console.log('save error', arguments);
@@ -298,8 +351,7 @@ function setupAddKeyButton (connectionId) {
 
   function saveComplete () {
     setTimeout(function () {
-      $('#saveKeyButton').html("Save");
-      $('#saveKeyButton').removeAttr("disabled");
+      $('#saveKeyButton').removeAttr("disabled").html("Save");
       refreshTree();
       $('#addKeyModal').modal('hide');
     }, 500);
@@ -319,7 +371,6 @@ function setupEditHashButton () {
     },
     success: function () {
       console.log('saved', arguments);
-      $('#editHashFieldButton').button('reset');
       saveComplete();
     }
   });
@@ -328,32 +379,40 @@ function setupEditHashButton () {
     setTimeout(function () {
       refreshTree();
       getKeyTree().select_node(0);
-      $('#editHashRowModal').modal('hide');
+      $('#editHashFieldButton').button('reset');
+      $('#editHashFieldModal').modal('hide');
     }, 500);
   }
 }
 
 function selectTreeNodeString (data) {
-  var html = new EJS({ url: '/templates/editString.ejs' }).render(data);
+  var html = new EJS({ url: 'templates/editString.ejs' }).render(data);
+  var isJsonParsed = false;
   $('#body').html(html);
 
   try {
-    data.value = JSON.stringify(JSON.parse(data.value), null, '  ');
-    $('#isJson').val('true');
+    JSON.parse(data.value);
+    isJsonParsed = true;
   } catch (ex) {
-    $('#isJson').val('false');
+    $('#isJson').prop('checked', false);
   }
 
   $('#stringValue').val(data.value);
-  $('#stringValue').keyup(function () {
-    $('#stringValueClippy').clippy({'text': $(this).val(), clippy_path: "/clippy-jquery/clippy.swf"});
-  }).keyup();
-  $('.clippyWrapper').tooltip();
+  // a this is json now assume it shall be json if it is object or array, but not for numbers
+  if (isJsonParsed && data.value.match(/^\s*[\{\[]/)) {
+      $('#isJson').click();
+  }
+
+  try {
+    $('#jqtree_string_div').html(JSONTree.create(JSON.parse(data.value)));
+  } catch (err) {
+    $('#jqtree_string_div').text('Text is no valid JSON: ' + err.message);
+  }
+
   $('#editStringForm').ajaxForm({
     beforeSubmit: function () {
       console.log('saving');
-      $('#saveKeyButton').attr("disabled", "disabled");
-      $('#saveKeyButton').html("<i class='icon-refresh'></i> Saving");
+      $('#saveKeyButton').attr("disabled", "disabled").html("<i class='icon-refresh'></i> Saving");
     },
     error: function (err) {
       console.log('save error', arguments);
@@ -370,25 +429,72 @@ function selectTreeNodeString (data) {
 
   function saveComplete () {
     setTimeout(function () {
-      $('#saveKeyButton').html("Save");
-      $('#saveKeyButton').removeAttr("disabled");
+      $('#saveKeyButton').removeAttr("disabled").html("Save");
     }, 500);
   }
 }
 
 function selectTreeNodeHash (data) {
-  var html = new EJS({ url: '/templates/editHash.ejs' }).render(data);
+  var html = new EJS({ url: 'templates/editHash.ejs' }).render(data);
   $('#body').html(html);
+
+  $('#addHashFieldForm').ajaxForm({
+    beforeSubmit: function () {
+      console.log('saving');
+      $('#saveHashFieldButton').button('loading');
+    },
+    error: function (err) {
+      console.log('save error', arguments);
+      alert("Could not save '" + err.statusText + "'");
+      saveComplete();
+    },
+    success: function () {
+      console.log('saved', arguments);
+      saveComplete();
+    }
+  });
+  function saveComplete () {
+    setTimeout(function () {
+      refreshTree();
+      getKeyTree().select_node(0);
+      $('#saveHashFieldButton').button('reset');
+      $('#addHashFieldModal').modal('hide');
+    }, 500);
+  }
 }
 
 function selectTreeNodeSet (data) {
-  var html = new EJS({ url: '/templates/editSet.ejs' }).render(data);
+  var html = new EJS({ url: 'templates/editSet.ejs' }).render(data);
   $('#body').html(html);
+
+  $('#addSetMemberForm').ajaxForm({
+    beforeSubmit: function () {
+      console.log('saving');
+      $('#saveMemberButton').button('loading');
+    },
+    error: function (err) {
+      console.log('save error', arguments);
+      alert("Could not save '" + err.statusText + "'");
+      saveComplete();
+    },
+    success: function () {
+      console.log('saved', arguments);
+      saveComplete();
+    }
+  });
+  function saveComplete () {
+    setTimeout(function () {
+      refreshTree();
+      getKeyTree().select_node(0);
+      $('#saveMemberButton').button('reset');
+      $('#addSetMemberModal').modal('hide');
+    }, 500);
+  }
 }
 
 function selectTreeNodeList (data) {
   if (data.items.length > 0) {
-    var html = new EJS({ url: '/templates/editList.ejs' }).render(data);
+    var html = new EJS({ url: 'templates/editList.ejs' }).render(data);
     $('#body').html(html);
     $('#addListValueForm').ajaxForm({
       beforeSubmit: function () {
@@ -402,7 +508,6 @@ function selectTreeNodeList (data) {
       },
       success: function () {
         console.log('saved', arguments);
-        $('#saveValueButton').button('reset');
         saveComplete();
       }
     });
@@ -411,23 +516,49 @@ function selectTreeNodeList (data) {
   }
   function saveComplete () {
     setTimeout(function () {
+      refreshTree();
+      getKeyTree().select_node(0);
+      $('#saveValueButton').button('reset');
       $('#addListValueModal').modal('hide');
-      $('a.jstree-clicked').click();
     }, 500);
   }
 }
 
 function selectTreeNodeZSet (data) {
   if (data.items.length > 0) {
-    var html = new EJS({ url: '/templates/editZSet.ejs' }).render(data);
+    var html = new EJS({ url: 'templates/editZSet.ejs' }).render(data);
     $('#body').html(html);
   } else {
     alert('Index out of bounds');
   }
+
+  $('#addZSetMemberForm').ajaxForm({
+    beforeSubmit: function () {
+      console.log('saving');
+      $('#saveZMemberButton').button('loading');
+    },
+    error: function (err) {
+      console.log('save error', arguments);
+      alert("Could not save '" + err.statusText + "'");
+      saveComplete();
+    },
+    success: function () {
+      console.log('saved', arguments);
+      saveComplete();
+    }
+  });
+  function saveComplete () {
+    setTimeout(function () {
+      refreshTree();
+      getKeyTree().select_node(0);
+      $('#saveZMemberButton').button('reset');
+      $('#addZSetMemberModal').modal('hide');
+    }, 500);
+  }
 }
 
 function getKeyTree () {
-  return $.jstree._reference('#keyTree');
+  return $.jstree.reference('#keyTree');
 }
 
 function refreshTree () {
@@ -435,29 +566,32 @@ function refreshTree () {
 }
 
 function addKey (connectionId, key) {
-  if (typeof(connectionId) == 'object') {
-    key = getFullKeyPath(connectionId);
-    if (key.length > 0) {
-      key = key + ":";
+  if (typeof(connectionId) === 'object') {
+    // context menu click
+    var node = getKeyTree().get_node(connectionId.reference[0]);
+    key = getFullKeyPath(node);
+    if (key.length > 0 && !key.endsWith(foldingCharacter)) {
+      key = key + foldingCharacter;
     }
-    var pathParts = getKeyTree().get_path(connectionId, true);
-    connectionId = pathParts.slice(0, 1)[0];
+    connectionId = getRootConnection(node);
   }
-  $('#addKeyForm').attr('action', '/apiv1/key/' + encodeURIComponent(connectionId) + "/" + encodeURIComponent(key));
+  $('#addKeyForm').attr('action', 'apiv2/key/' + encodeURIComponent(connectionId) + "/" + encodeURIComponent(key));
   $('#keyValue').val(key);
   $('#addKeyModal').modal('show');
   setupAddKeyButton(connectionId);
 }
+
 function deleteKey (connectionId, key) {
-  if (typeof(connectionId) == 'object') {
-    key = getFullKeyPath(connectionId);
-    var pathParts = getKeyTree().get_path(connectionId, true);
-    connectionId = pathParts.slice(0, 1)[0];
+  if (typeof(connectionId) === 'object') {
+      // context menu click
+      var node = getKeyTree().get_node(connectionId.reference[0]);
+      key = getFullKeyPath(node);
+      connectionId = getRootConnection(node);
   }
   var result = confirm('Are you sure you want to delete "' + key + ' from ' + connectionId + '"?');
   if (result) {
-    $.post('/apiv1/key/' + encodeURIComponent(connectionId) + '/' + encodeURIComponent(key) + '?action=delete', function (data, status) {
-      if (status != 'success') {
+    $.post('apiv2/key/' + encodeURIComponent(connectionId) + '/' + encodeURIComponent(key) + '?action=delete', function (data, status) {
+      if (status !== 'success') {
         return alert("Could not delete key");
       }
 
@@ -468,13 +602,52 @@ function deleteKey (connectionId, key) {
   }
 }
 
+function decodeKey (connectionId, key) {
+  if (typeof(connectionId) === 'object') {
+      // context menu click
+      var node = getKeyTree().get_node(connectionId.reference[0]);
+      key = getFullKeyPath(node);
+      connectionId = getRootConnection(node);
+  }
+
+  $.post('apiv2/key/' + encodeURIComponent(connectionId) + '/' + encodeURIComponent(key) + '?action=decode', function (data, status) {
+    if (status !== 'success') {
+      return alert("Could not decode key");
+    }
+
+    $('#base64Button').html('Encode <small>base64</small>')
+      .off('click')
+      .on('click', function() {
+        encodeString(connectionId, key)
+      });
+    $('#stringValue').val(data);
+  });
+}
+
+function encodeString (connectionId, key) {
+  $.post('apiv2/encodeString/' + encodeURIComponent($('#stringValue').val()), function (data, status) {
+    if (status !== 'success') {
+      return alert("Could not encode key");
+    }
+
+    // needed to debounce
+    setTimeout(function() {
+      $('#base64Button').html('Decode <small>base64</small>')
+        .off('click')
+        .on('click', function() {
+          decodeKey(connectionId,key)
+        });
+      $('#stringValue').val(data);
+    }, 100);
+  });
+}
 
 function deleteBranch (connectionId, branchPrefix) {
-  var query = branchPrefix + ':*';
+  var query = (branchPrefix.endsWith(foldingCharacter) ? branchPrefix : branchPrefix + foldingCharacter) + '*';
   var result = confirm('Are you sure you want to delete "' + query + ' from ' + connectionId + '"? This will delete all children as well!');
   if (result) {
-    $.post('/apiv1/keys/' + encodeURIComponent(connectionId) + "/" + encodeURIComponent(query) + '?action=delete', function (data, status) {
-      if (status != 'success') {
+    $.post('apiv2/keys/' + encodeURIComponent(connectionId) + "/" + encodeURIComponent(query) + '?action=delete', function (data, status) {
+      if (status !== 'success') {
         return alert("Could not delete branch");
       }
 
@@ -486,44 +659,112 @@ function deleteBranch (connectionId, branchPrefix) {
 }
 function addListValue (connectionId, key) {
   $('#key').val(key);
-  $('#addStringValue').val("");
+  $('#addListValue').val("");
   $('#addListConnectionId').val(connectionId);
   $('#addListValueModal').modal('show');
 }
-function editListRow (connectionId, key, index, value) {
-  console.log(connectionId);
+
+function editListValue (connectionId, key, index, value) {
   $('#editListConnectionId').val(connectionId);
   $('#listKey').val(key);
   $('#listIndex').val(index);
   $('#listValue').val(value);
-  $('#editListRowModal').modal('show');
+  $('#listValueIsJson').prop('checked', false);
+  $('#editListValueModal').modal('show');
   setupEditListButton();
+  enableJsonValidationCheck(value, '#listValueIsJson');
 }
-function editZSetRow (connectionId, key, score, value) {
+
+function addSetMember (connectionId, key) {
+  $('#addSetKey').val(key);
+  $('#addSetMemberName').val("");
+  $('#addSetConnectionId').val(connectionId);
+  $('#addSetMemberModal').modal('show');
+}
+
+function editSetMember (connectionId, key, member) {
+  $('#setConnectionId').val(connectionId);
+  $('#setKey').val(key);
+  $('#setMember').val(member);
+  $('#setOldMember').val(member);
+  $('#setMemberIsJson').prop('checked', false);
+  $('#editSetMemberModal').modal('show');
+  setupEditSetButton();
+  enableJsonValidationCheck(member, '#setMemberIsJson');
+}
+
+function addZSetMember (connectionId, key) {
+    $('#addZSetKey').val(key);
+    $('#addZSetScore').val("");
+    $('#addZSetMemberName').val("");
+    $('#addZSetConnectionId').val(connectionId);
+    $('#addZSetMemberModal').modal('show');
+}
+
+function editZSetMember (connectionId, key, score, value) {
   $('#zSetConnectionId').val(connectionId);
   $('#zSetKey').val(key);
   $('#zSetScore').val(score);
   $('#zSetValue').val(value);
   $('#zSetOldValue').val(value);
-  $('#editZSetRowModal').modal('show');
+  $('#zSetValueIsJson').prop('checked', false);
+  $('#editZSetMemberModal').modal('show');
   setupEditZSetButton();
+  enableJsonValidationCheck(value, '#zSetValueIsJson');
 }
-function editHashRow (connectionId, key, field, value) {
+
+function addHashField (connectionId, key) {
+    $('#addHashKey').val(key);
+    $('#addHashFieldName').val("");
+    $('#addHashFieldValue').val("");
+    $('#addHashConnectionId').val(connectionId);
+    $('#addHashFieldModal').modal('show');
+}
+
+function editHashField (connectionId, key, field, value) {
   $('#hashConnectionId').val(connectionId);
   $('#hashKey').val(key);
   $('#hashField').val(field);
   $('#hashFieldValue').val(value);
-  $('#editHashRowModal').modal('show');
+  $('#hashFieldIsJson').prop('checked', false);
+  $('#editHashFieldModal').modal('show');
   setupEditHashButton();
+  enableJsonValidationCheck(value, '#hashFieldIsJson');
 }
+
+/** check if given string value is valid json and, if so enable validation
+ *  for given field if this is an json object or array. Do not automatically
+ *  enable validation on numbers or quted strings. May be coincidence that this is json...
+ *
+ *  @param {string} value string to check if valid json
+ *  @param {string} isJsonCheckBox id string of checkbox element to activate validation
+ */
+function enableJsonValidationCheck(value, isJsonCheckBox) {
+  try {
+    JSON.parse(value);
+    // if this is valid json and is array or object assume we want validation active
+    if (value.match(/^\s*[\{\[]/)) {
+      $(isJsonCheckBox).click();
+    }
+  }
+  catch {}
+}
+
 function removeListElement () {
   $('#listValue').val('REDISCOMMANDERTOMBSTONE');
-  $('#editListRowForm').submit();
+  $('#editListValueForm').submit();
 }
+
+function removeSetElement () {
+  $('#setMember').val('REDISCOMMANDERTOMBSTONE');
+  $('#editSetMemberForm').submit();
+}
+
 function removeZSetElement () {
   $('#zSetValue').val('REDISCOMMANDERTOMBSTONE');
-  $('#editZSetRowForm').submit();
+  $('#editZSetMemberForm').submit();
 }
+
 function removeHashField () {
   $('#hashFieldValue').val('REDISCOMMANDERTOMBSTONE');
   $('#editHashFieldForm').submit();
@@ -565,7 +806,7 @@ function loadCommandLine () {
     hideCommandLineOutput();
   });
 
-  var readline = require("readline");
+  var readline = require("readline-browserify");
   var output = document.getElementById('commandLineOutput');
   var rl = readline.createInterface({
     elementId: 'commandLine',
@@ -595,10 +836,10 @@ function loadCommandLine () {
       refreshTree();
       rl.write("OK");
     } else {
-      $.post('/apiv1/exec', { cmd: line, connection: $('#selectedConnection').val() }, function (data, status) {
+      $.post('apiv2/exec/' + encodeURIComponent($('#selectedConnection').val()), { cmd: line }, function (data, status) {
         rl.prompt();
 
-        if (status != 'success') {
+        if (status !== 'success') {
           return alert("Could not delete branch");
         }
 
@@ -624,6 +865,88 @@ function loadCommandLine () {
       refreshTree();
     }
   });
+}
+
+/** Remove all input validators attached to an form element (keyup handler)
+ *  as well as visual decorations applied
+ *
+ *  @param {string|object} inputId id of input element or jquery object to remove handler and decoration from
+ */
+function removeInputValidator(inputId) {
+  if (typeof inputId === 'string') {
+      inputId = $(document.getElementById(inputId));
+  }
+  inputId.off('keyup').removeClass('validate-negative').removeClass('validate-positive');
+}
+
+/** Add data format validation function to an input element.
+ *  The field gets decorated to visualize if input is valid for given data format.
+ *
+ *  @param {string|object} inputId id of html input element to watch or jquery object
+ *  @param {string} format data format to validate against, possible values: "json"
+ *  @param {boolean} [currentState] optional start state to set now
+ */
+function addInputValidator(inputId, format, currentState) {
+  var input;
+  if (typeof inputId === 'string') {
+    input = $('#' + inputId)
+  }
+  else if (typeof inputId === 'object') {
+    input = inputId;
+  }
+
+  if (!input){
+    console.log('Invalid html id given to validate format: ', inputId);
+    return;
+  }
+
+  switch (format) {
+    case 'json':
+        input.on('keyup', validateInputAsJson);
+        break;
+    default:
+        console.log('Invalid format given to validate input: ', format);
+        return;
+  }
+
+  // set initial state if requested
+  if (typeof currentState === 'boolean') {
+    setValidationClasses(input.get(0), currentState);
+  }
+  else {
+    input.trigger( "keyup" );
+  }
+}
+
+/** method to check if a input field contains valid json and set visual accordingly.
+ *
+ */
+function validateInputAsJson() {
+  if (this.value) {
+    try {
+      JSON.parse(this.value);
+      setValidationClasses(this, true);
+    }
+    catch(e) {
+      setValidationClasses(this, false);
+    }
+  }
+  else {
+    setValidationClasses(this, false)
+  }
+}
+
+/** classes are only changed if not set right now
+ *
+ * @param {Element} element HTML DOM element to change validation classes
+ * @param {boolean} success true if positive validation class shall be assigned, false for error class
+ */
+function setValidationClasses(element, success) {
+  var add = (success ? 'validate-positive' : 'validate-negative');
+  var remove = (success ? 'validate-negative' : 'validate-positive');
+  if (element.className.indexOf(add) < 0) {
+    $(element).removeClass(remove).addClass(add);
+  }
 }
 
 function escapeHtml (str) {
@@ -782,8 +1105,8 @@ var cmdparser = new CmdParser([
 ], {
   key: function (partial, callback) {
     var redisConnection = $('#selectedConnection').val();
-    $.get('/apiv1/keys/' + encodeURIComponent(redisConnection) + "/" + partial + '*?limit=20', function (data, status) {
-      if (status != 'success') {
+    $.get('apiv2/keys/' + encodeURIComponent(redisConnection) + "/" + partial + '*?limit=20', function (data, status) {
+      if (status !== 'success') {
         return callback(new Error("Could not get keys"));
       }
       data = JSON.parse(data)
@@ -794,6 +1117,7 @@ var cmdparser = new CmdParser([
     });
   }
 });
+
 var configTimer;
 var prevSidebarWidth;
 var prevLocked;
@@ -802,22 +1126,24 @@ var prevCLIOpen;
 var configLoaded = false;
 
 function getServerInfo (callback) {
-  $.get('/apiv1/server/info', function (data, status) {
+  $.get('apiv2/server/info', function (data, status) {
     callback(JSON.parse(data))
   });
 }
 
 function removeServer (connectionId) {
-  if (typeof(connectionId) == 'object') {
-    var pathParts = getKeyTree().get_path(connectionId, true);
-    connectionId = pathParts.slice(0, 1)[0];
+  if (typeof(connectionId) === 'object') {
+      // context menu click
+      var node = getKeyTree().get_node(connectionId.reference[0]);
+      connectionId = getRootConnection(node);
   }
   var result = confirm('Are you sure you want to disconnect from "' + connectionId + '"?');
   if (result) {
-    $.post('/logout/' + encodeURIComponent(connectionId), function (err, status) {
-      if (status != 'success') {
+    $.post('logout/' + encodeURIComponent(connectionId), function (err, status) {
+      if (status !== 'success') {
         return alert("Could not remove instance");
       }
+      $(window).unbind('beforeunload');
       location.reload();
     });
   }
@@ -841,7 +1167,7 @@ function configChange () {
     var locked = !$('#lockCommandButton').hasClass('disabled');
     var CLIWidth = $('#commandLineContainer').height();
 
-    if (typeof(prevSidebarWidth) != 'undefined' &&
+    if (typeof(prevSidebarWidth) !== 'undefined' &&
       (sidebarWidth != prevSidebarWidth ||
         locked != prevLocked ||
         CLIWidth != prevCLIWidth ||
@@ -862,29 +1188,30 @@ function saveConfig () {
   var sidebarWidth = $('#sideBar').width();
   var locked = !$('#lockCommandButton').hasClass('disabled');
   var CLIHeight = $('#commandLineContainer').height();
-  $.get('/config', function (config) {
+  $.get('config', function (config) {
     if (config) {
       config["sidebarWidth"] = sidebarWidth;
       config["locked"] = locked;
       config["CLIHeight"] = CLIHeight;
       config["CLIOpen"] = CLIOpen;
-      $.post('/config', config, function (data, status) {
+      $.post('config', config, function (data, status) {
       });
     } else {
-      var config = {
+      config = {
         "sidebarWidth": sidebarWidth,
         "locked": locked,
         "CLIHeight": CLIHeight,
         "CLIOpen": CLIOpen,
         "default_connections": []
       };
-      $.post('/config', config, function (data, status) {
+      $.post('config', config, function (data, status) {
       });
     }
   });
 }
+
 function loadConfig (callback) {
-  $.get('/config', function (data) {
+  $.get('config', function (data) {
     if (data) {
       if (data['sidebarWidth']) {
         $('#sideBar').width(data['sidebarWidth']);
@@ -909,18 +1236,19 @@ function loadConfig (callback) {
     }
   });
 }
+
 function resizeApp () {
   var barWidth = $('#keyTree').outerWidth(true);
   $('#sideBar').css('width', barWidth);
   var bodyMargin = parseInt($('#body').css('margin-left'), 10);
   var newBodyWidth = $(window).width() - barWidth - bodyMargin;
-  $('#body,#itemActionsBar').css('width', newBodyWidth);
-  $('#body,#itemActionsBar').css('left', barWidth);
+  $('#body,#itemActionsBar').css('width', newBodyWidth).css('left', barWidth);
 
   $('#keyTree').height($(window).height() - $('#keyTree').offset().top - $('#commandLineContainer').outerHeight(true));
   $('#body, #sidebarResize').css('height', $('#sideBar').css('height'));
   configChange();
 }
+
 function setupResizeEvents () {
   var sidebarResizing = false;
   var sidebarFrame = $("#sideBar").width();
@@ -958,6 +1286,7 @@ function setupResizeEvents () {
     }
   });
 }
+
 function setupCommandLock () {
   $('#lockCommandButton').click(function () {
     $(this).toggleClass('disabled');
@@ -969,29 +1298,29 @@ function setupCLIKeyEvents () {
   var ctrl_down = false;
   var isMac = navigator.appVersion.indexOf("Mac") != -1;
   var cli = $('#_readline_cliForm input');
-  cli.live('keydown', function (e) {
+  cli.on('keydown', function (e) {
     var key = e.which;
     //ctrl
-    if (key == 17 && isMac) {
+    if (key === 17 && isMac) {
       ctrl_down = true;
     }
 
     //c
-    if (key == 67 && ctrl_down) {
+    if (key === 67 && ctrl_down) {
       clearCLI();
       e.preventDefault();
     }
 
     //esc
-    if (key == 27) {
+    if (key === 27) {
       clearCLI();
       e.preventDefault();
     }
   });
-  cli.live('keyup', function (e) {
+  cli.on('keyup', function (e) {
     var key = e.which;
     //ctrl
-    if (key == 17 && isMac) {
+    if (key === 17 && isMac) {
       ctrl_down = false;
     }
   });
@@ -1007,11 +1336,26 @@ function setupCLIKeyEvents () {
 }
 
 $(function() {
+  function refreshQueryToken() {
+    $.post('signin', {}, function (data, status) {
+      if ((status !== 'success') || !data || !data.ok) {
+        console.error("Cannot refresh query token");
+        return;
+      }
+      sessionStorage.setItem('redisCommanderBearerToken', data.bearerToken);
+      sessionStorage.setItem('redisCommanderQueryToken', data.queryToken);
+    })
+    .fail(function(err) {
+      console.error("Failed to refresh query token", err);
+    });
+  }
+
   /**
    * Export redis data.
    */
   $('#app-container').on('submit', '#redisExportForm', function () {
-    window.open("/tools/export?" + $(this).serialize(), '_blank');
+    window.open("tools/export?" + $(this).serialize() + '&redisCommanderQueryToken=' + encodeURIComponent(sessionStorage.getItem('redisCommanderQueryToken')), '_blank');
+    refreshQueryToken();
     return false;
   });
 
@@ -1023,8 +1367,8 @@ $(function() {
 
     $.ajax({
       type: 'POST',
-      url: '/tools/import',
-      data: $(this).serialize(),
+      url: 'tools/import',
+      data: $(this).serialize() + '&redisCommanderQueryToken=' + encodeURIComponent(sessionStorage.getItem('redisCommanderQueryToken') || ''),
       dataType: 'JSON',
       success: function (res) {
         $('#body').html('<h2>Import</h2>' +
@@ -1033,7 +1377,7 @@ $(function() {
           '<span class="label label-' + (res.errors ? 'important' : 'success') + '">' + (res.errors ? 'Errors' : 'Success') + '</span>');
       }
     });
-
+    refreshQueryToken();
     return false;
   });
 
@@ -1043,7 +1387,7 @@ $(function() {
   $('#redisImportData').on('click', function () {
     $.ajax({
       type: 'POST',
-      url: '/tools/forms/import',
+      url: 'tools/forms/import',
       success: function (res) {
         $('#body').html(res);
       }
@@ -1056,10 +1400,18 @@ $(function() {
   $('#redisExportData').on('click', function () {
     $.ajax({
       type: 'POST',
-      url: '/tools/forms/export',
+      url: 'tools/forms/export',
       success: function (res) {
         $('#body').html(res);
       }
     });
+  });
+
+  /**
+   * Refresh and expand all nodes in tree
+   */
+  $('#expandAllNodes').on('click', function () {
+    refreshTree();
+    $('#keyTree').jstree('open_all');
   });
 });

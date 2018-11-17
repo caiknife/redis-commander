@@ -11,8 +11,9 @@
             <span class="caret"></span>
           </a>
           <ul class="dropdown-menu">
+            <li><a data-toggle="modal" id="expandAllNodes" href="#"><b class="icon-plus-sign"></b><b class="icon-th"></b> Refresh+Expand All Nodes</a></li>
             <li><a data-toggle="modal" id="redisImportData" href="#"><b class="icon-arrow-right"></b><b class="icon-th"></b> Import</a></li>
-            <li><a data-toggle="modal" id="redisExportData" href="#"><b class="icon-arrow-left"></b></b><b class="icon-th"></b> Export</a></li>
+            <li><a data-toggle="modal" id="redisExportData" href="#"><b class="icon-arrow-left"></b><b class="icon-th"></b> Export</a></li>
             <li><a data-toggle="modal" href="#addServerModal"><b class="icon-plus-sign"></b> Add Server</a></li>
           </ul>
         </div>
@@ -28,22 +29,7 @@
 </div>
 <div id="commandLineContainer">
   <div id="commandLineBorder" style="border-top: 1px solid #ddd;padding-bottom: 5px;"></div>
-  <div class="btn-group" data-toggle="buttons-radio" style="padding-bottom: 5px; padding-left: 5px">
-    <% var connections = getConnections(); %>
-    <% connections.forEach(function(connection, index) {%>
-    <% if (index == 0) { %>
-    <button type="button" id="firstConnection"
-            value='<%=connection.host%>:<%=connection.port%>:<%=connection.selected_db%>'
-            class="btn btn-primary active"
-            onclick="setConnection('<%=connection.host%>:<%=connection.port%>:<%=connection.selected_db%>');">
-      <%=connection.host + ':' + connection.port + ':' + connection.selected_db%>
-    </button>
-    <% } else { %>
-    <button type="button" class="btn btn-primary"
-            onclick="setConnection('<%=connection.host%>:<%=connection.port%>:<%=connection.selected_db%>');">
-      <%=connection.host + ':' + connection.port + ':' + connection.selected_db%>
-    </button>
-    <% }}); %>
+  <div class="btn-group" data-toggle="buttons-radio" style="padding-bottom: 5px; padding-left: 5px" id="connectionsBar">
   </div>
   <div style="border-top: 1px solid #ddd;padding-bottom: 5px;"></div>
   <i id="lockCommandButton" class="icon-lock disabled"></i>
@@ -57,13 +43,13 @@
 
 <!-- COMMANDS MODAL -->
 <div id="redisCommandsModal" class="modal hide fade">
-  <a id="redisCommandsExternal" target="_blank" href="http://redis.io/commands">Open in new window</a>
+  <a id="redisCommandsExternal" target="_blank" href="https://redis.io/commands">Open in new window</a>
   <button id="redisCommandsClose" type="button" class="close" data-dismiss="modal">×</button>
   <div class="modal-body">
-    <iframe seamless="seamless" src="http://redis.io/commands">test</iframe>
+    <iframe seamless="seamless" src="https://redis.io/commands">test</iframe>
   </div>
 </div>
-<div class="modal hide fade" id="addServerModal">
+<div id="addServerModal" class="modal hide fade">
   <div class="modal-header">
     <button type="button" class="close" data-dismiss="modal">×</button>
     <h3>Add a connection</h3>
@@ -71,68 +57,146 @@
   <div class="modal-body">
     <div class="container" id="addServerContainer">
       <form action="login" method="POST" id="addServerForm">
-        <label>Hostname</label>
+        <label for="label">Name</label>
+        <input type="text" name="label" id="label" value="">
+        <label for="hostname">Hostname</label>
         <input type="text" name="hostname" id="hostname" value="localhost">
-        <label>Port or Unix Socket Path</label>
+        <label for="port">Port or Unix Socket Path</label>
         <input type="text" name="port" id="port" value="6379">
-        <label>Password</label>
+        <label for="password">Password</label>
         <input type="password" name="password" id="password" value="">
-        <label>Database Index</label>
-        <select name="dbIndex" id="dbIndex">
-          <option value="0" selected="selected">0</option>
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-          <option value="6">6</option>
-          <option value="7">7</option>
-          <option value="8">8</option>
-          <option value="9">9</option>
-          <option value="10">10</option>
-          <option value="11">11</option>
-          <option value="12">12</option>
-          <option value="13">13</option>
-          <option value="14">14</option>
-          <option value="15">15</option>
-        </select>
+        <label for="dbIndex">Database Index</label>
+        <input type="number" name="dbIndex" id="dbIndex" value="0">
         <br>
       </form>
     </div>
   </div>
   <div class="modal-footer">
     <a href="#" class="btn" data-dismiss="modal">Close</a>
-    <a type="submit" onclick="addServer()" class="btn btn-primary">Connect...</a>
+    <a type="button" onclick="addServer()" class="btn btn-primary" id="addServerBtn">Connect...</a>
   </div>
 </div>
 <!-- /COMMANDS MODAL -->
 
 <script type="text/javascript">
+  var httpAuthDisabled = <%= httpAuthDisabled %>;
+  var foldingCharacter = '<%= foldingCharacter %>';
   var setConnection = function (connectionId) {
     $('#selectedConnectionLabel').text("Current Instance: " + connectionId);
     $('#selectedConnection').val(connectionId);
   };
   $(function () {
-    $('#selectedConnectionLabel').text("Current Instance: " + $('#firstConnection').val());
-    $('#selectedConnection').val($('#firstConnection').val());
-    loadTree();
-    loadConfig(function () {
-      loadCommandLine();
-      setupResizeEvents();
-      setupCommandLock();
-      setupCLIKeyEvents();
-      $('.container').removeClass('container');
-      $('html').css('overflow-y', 'hidden');
-      $('#pageIndex').live('keydown', function (e) {
-        if (e.keyCode == 13) {
-          $('#gotoIndexButton').click();
+    $(window).bind('beforeunload', () => {
+      sessionStorage.clear();
+    });
+    $.ajaxSetup({
+      beforeSend: function(jqXHR) {
+        var redisCommanderBearerToken = sessionStorage.getItem('redisCommanderBearerToken');
+        if (!httpAuthDisabled && redisCommanderBearerToken) {
+          jqXHR.setRequestHeader('Authorization', 'Bearer ' + redisCommanderBearerToken);
         }
+      }
+    });
+    function refreshToken() {
+      $.post('signin', {}, function (data, status) {
+        if (status !== 'success') {
+          console.error("refresh token connection problem");
+          return;
+        }
+        if (!data || !data.ok) {
+          sessionStorage.removeItem('redisCommanderBearerToken');
+          sessionStorage.removeItem('redisCommanderQueryToken');
+          $('#signinModal').modal({
+            backdrop: 'static',
+            keyboard: false,
+            show: true
+          });
+          return;
+        }
+        var oldToken = sessionStorage.getItem('redisCommanderBearerToken');
+        sessionStorage.setItem('redisCommanderBearerToken', data.bearerToken);
+        sessionStorage.setItem('redisCommanderQueryToken', data.queryToken);
+        if (!oldToken) {
+          $(window).unbind('beforeunload');
+          location.reload();
+        }
+        setTimeout(refreshToken, 20e3);
+      })
+      .fail(function(err) {
+        console.error("Signin network error", err);
+        setTimeout(refreshToken, 5e3);
+      })
+
+      // register add server form as ajax form to send bearer token too
+      $('#addServerForm').ajaxForm({
+          beforeSubmit: function () {
+              console.log('try connection to new redis server');
+              $('#addServerBtn').prop("disabled", true).html("<i class='icon-refresh'></i> Saving");
+          },
+          error: function (err) {
+              console.log('connect error: ', arguments);
+              addServerError(err.statusText);
+          },
+          success: function () {
+              if (arguments[0] && arguments[0].ok) addServerComplete();
+              else {
+                  addServerError(arguments[0] ? arguments[0].message : 'Server error processing request');
+              }
+          }
       });
-      $('#redisCommandsModal').modal({
-        backdrop: false,
-        keyboard: false,
-        show: false
+
+      function addServerComplete() {
+          console.log('Connect successful');
+          $('#addServerBtn').prop("disabled", false).text("Connect...");
+          setTimeout(function() {
+              $(window).unbind('beforeunload');
+              location.reload();
+          }, 500);
+      }
+      function addServerError(errMsg) {
+          alert("Could not connect to redis server '" + errMsg + "'");
+          $('#addServerBtn').prop("disabled", false).text("Connect...");
+          $('#addServerModal').modal('hide');
+      }
+    }
+
+    refreshToken();
+    if (!sessionStorage.getItem('redisCommanderBearerToken')) {
+      return;
+    }
+    $.get('connections', function(data, status) {
+      if (status !== 'success') {
+        console.error("Failed to fetch connections");
+        return;
+      }
+      $('#connectionsBar').html(new EJS({ url: 'templates/connectionsBar.ejs' }).render(data));
+
+      var firstConnection = $('#firstConnection').val();
+      $('#selectedConnectionLabel').text("Current Instance: " + firstConnection);
+      $('#selectedConnection').val(firstConnection);
+
+      loadTree();
+      loadConfig(function () {
+        loadCommandLine();
+        setupResizeEvents();
+        setupCommandLock();
+        setupCLIKeyEvents();
+        $('.container').removeClass('container');
+        $('html').css('overflow-y', 'hidden');
+        $('#pageIndex').on('keydown', function (e) {
+          if (e.keyCode === 13) {
+            $('#gotoIndexButton').click();
+          }
+        });
+        $('#redisCommandsModal').modal({
+          backdrop: false,
+          keyboard: false,
+          show: false
+        });
       });
+    })
+    .fail(err => {
+      console.error("Failed to fetch connections", err);
     });
   });
 </script>

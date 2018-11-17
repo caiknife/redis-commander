@@ -28,6 +28,10 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
 }
 
+.navbar .brand {
+  padding: 0 0 0 20px;
+}
+
 #sideBar {
   position: fixed;
   top: 40px;
@@ -35,6 +39,17 @@ body {
   width: 250px;
   border-right: 1px solid #DDD;
   z-index: 1;
+}
+
+#sidebarResize {
+  position: absolute;
+  top: 0;
+  right: -11px;
+  height: 100%;
+  width: 1px;
+  background-color: transparent;
+  border: 10px solid transparent;
+  cursor: col-resize;
 }
 
 #keyTree {
@@ -49,22 +64,7 @@ body {
 
 #itemData {
   overflow: scroll;
-  margin-top: 32px;
-}
-
-.jstree-default.jstree-focused {
-  background: #fff !important;
-}
-
-#sidebarResize {
-  position: absolute;
-  top: 0;
-  right: -11px;
-  height: 100%;
-  width: 1px;
-  background-color: transparent;
-  border: 10px solid transparent;
-  cursor: col-resize;
+  margin-top: 40px;
 }
 
 #body {
@@ -77,12 +77,12 @@ body {
 
 #itemActionsBar {
   position: fixed;
-  top: 0px;
+  top: 0;
   left: 250px;
   margin-left: 30px;
   width: 100%;
   margin-top: 30px;
-  padding-bottom: 5px;
+  padding-bottom: 10px;
   padding-top: 20px;
   background-color: #fff;
   border-bottom: 1px solid #ddd;
@@ -95,6 +95,10 @@ body {
   background-color: #fff;
   width: 100%;
   z-index: 1039;
+}
+
+#commandLineContainer .btn-group {
+    white-space: normal;
 }
 
 #commandLineContainer form {
@@ -132,9 +136,6 @@ body {
   padding-left: 15px;
   font-family: Menlo, "monospace","Courier New";
   overflow: scroll;
-}
-
-#commandLine {
 }
 
 #commandLine input {
@@ -176,6 +177,7 @@ body {
   display: inline-block;
   float: right;
   margin-right: 20px;
+  margin-bottom: 0;
 }
 
 #lockCommandButton.disabled {
@@ -206,6 +208,13 @@ body {
   overflow: hidden;
 }
 
+#redisCommandsModal iframe {
+  border-radius: 6px;
+  border: none;
+  width: 100%;
+  height: 400px;
+}
+
 #redisCommandsClose {
   position: absolute;
   top: 10px;
@@ -216,13 +225,6 @@ body {
 
 #redisCommandsClose:hover {
   color: white;
-}
-
-#redisCommandsModal iframe {
-  border-radius: 6px;
-  border: none;
-  width: 100%;
-  height: 400px;
 }
 
 #redisCommandsExternal {
@@ -243,13 +245,12 @@ body {
   padding-left: 20px;
 }
 
-#scoreWrap {
+#scoreWrap, #fieldWrap {
   display: none;
-  margin-left: 10px;
 }
 
-.navbar .brand {
-  padding: 0 0 0 20px;
+#scoreWrap > input, #fieldWrap > input {
+  margin-bottom: 10px;
 }
 
 #vakata-contextmenu {
@@ -279,6 +280,50 @@ body {
   height: 300px;
 }
 
-.modal .form-horizontal {
+.modal .form-horizontal, .modal .form-vertical {
   margin: 0;
+}
+
+.label-big .lead {
+  margin-bottom: 10px;
+  margin-top: 10px;
+}
+
+#signinForm {
+  margin: 0;
+}
+
+#addKeyForm {
+  margin: 0;
+}
+
+.modal-content-width {
+  margin-left: auto;
+  margin-right: auto;
+  width: calc(100% - 15px);
+}
+
+.control-group input, .control-group select{
+  margin-bottom: 0;
+}
+
+.validate-negative, .validate-negative:focus {
+  background-color: #fff;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.05), inset 0 0 6px #ff1a1a;
+}
+
+.validate-positive, .validate-positive:focus {
+  background-color: #fff;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075), inset 0 0 6px #87d738;
+}
+
+.redisDumpSelect {
+  min-width: 230px;
+  width: auto;
+}
+/* without explicit z-index tree and contextmenu marged into one layer, preventing clicks
+   must be larger than command line z-index
+ */
+.jstree-contextmenu {
+  z-index: 1100;
 }
